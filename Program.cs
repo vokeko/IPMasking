@@ -1,93 +1,90 @@
-﻿// See https://aka.ms/new-console-template for more information
-
+﻿using System;
 using System.Net;
-using System.Text.RegularExpressions;
+using System.Net.Sockets;
 
 string? network;
+uint networkAddress = 0;
+uint networkMask = 0;
 
-
-do
+while (true)
 {
-    Console.WriteLine("Zadejte síť ve formátu x.x.x.x/x");
-    network = Console.ReadLine();
-    bool isValid = !string.IsNullOrEmpty(network) && CheckNetworkValidity(network);
-    if (!isValid)
-    {
-        Console.WriteLine("Zadali jste neplatnou síť");
-    }
-    else
+    Console.WriteLine("Zadejte síť ve formátu x.x.x.x/x (prázdné pro ukončení)");
+    network = Console.ReadLine()?.Trim();
+    if (string.IsNullOrEmpty(network))
+        return;
+
+    if (TryParseNetwork(network, out networkAddress, out networkMask))
     {
         Console.WriteLine("Zadali jste platnou síť");
         break;
     }
-}
-while (true);
 
-do
+    Console.WriteLine("Zadali jste neplatnou síť");
+}
+
+while (true)
 {
-    Console.WriteLine("Zadejte ip adresu");
-    string? ip = Console.ReadLine();
+    Console.WriteLine("Zadejte IP adresu (prázdné pro ukončení)");
+    string? ip = Console.ReadLine()?.Trim();
     if (string.IsNullOrEmpty(ip))
         break;
-    if (ValidateIpAddress(ip))
+
+    if (TryParseIPv4(ip, out uint ipValue))
     {
         Console.WriteLine("Zadali jste platnou IP adresu");
-        bool isInNetwork = IsIPInNetwork(ip, network!);
+        bool isInNetwork = (ipValue & networkMask) == (networkAddress & networkMask);
         Console.WriteLine(isInNetwork ? "Zadaná adresa je v síti" : "Zadaná adresa není v síti");
     }
     else
     {
         Console.WriteLine("Zadali jste neplatnou IP adresu");
-        break;
     }
 }
-while (true);
 
-static bool CheckNetworkValidity (string network)
+static bool TryParseIPv4(string text, out uint value)
 {
-    if (!network.Contains('/')) return false;
-    string[] parts = network.Split('/');
-    if (parts.Length != 2) return false;
-    if (!ValidateIpAddress(parts[0])) return false;
-    if (!int.TryParse(parts[1], out int mask)) return false;
-    if (mask < 0 || mask > 32) return false;
+    value = 0;
+    if (!IPAddress.TryParse(text, out var addr))
+        return false;
+    if (addr.AddressFamily != AddressFamily.InterNetwork)
+        return false;
+
+    value = ToUint(addr);
     return true;
 }
 
-static bool ValidateIpAddress (string ipAddress)
+static bool TryParseNetwork(string network, out uint netInt, out uint maskInt)
 {
-    string pattern = @"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$";
-    Regex regex = new Regex(pattern);
-
-    return regex.IsMatch(ipAddress);
-}
-
-static bool IsIPInNetwork(string ip, string network)
-{
-    // očekává formát "x.x.x.x/x" a IPv4 adresy
-    if (string.IsNullOrEmpty(ip) || string.IsNullOrEmpty(network)) return false;
+    netInt = 0;
+    maskInt = 0;
+    if (string.IsNullOrEmpty(network))
+        return false;
 
     var parts = network.Split('/');
-    if (parts.Length != 2) return false;
+    if (parts.Length != 2)
+        return false;
 
-    if (!ValidateIpAddress(parts[0]) || !int.TryParse(parts[1], out int mask)) return false;
-    if (mask < 0 || mask > 32) return false;
-    if (!ValidateIpAddress(ip)) return false;
+    if (!TryParseIPv4(parts[0], out netInt))
+        return false;
 
-    // převedeme na 32-bit unsigned integer (big-endian -> možný převod podle endianness)
-    byte[] ipBytes = IPAddress.Parse(ip).GetAddressBytes();
-    byte[] netBytes = IPAddress.Parse(parts[0]).GetAddressBytes();
+    if (!int.TryParse(parts[1], out int mask))
+        return false;
+    if (mask < 0 || mask > 32)
+        return false;
 
-    if (BitConverter.IsLittleEndian)
-    {
-        Array.Reverse(ipBytes);
-        Array.Reverse(netBytes);
-    }
+    if (mask == 0)
+        maskInt = 0;
+    else if (mask == 32)
+        maskInt = uint.MaxValue;
+    else
+        maskInt = uint.MaxValue << (32 - mask);
 
-    uint ipInt = BitConverter.ToUInt32(ipBytes, 0);
-    uint netInt = BitConverter.ToUInt32(netBytes, 0);
+    return true;
+}
 
-    uint maskInt = mask == 0 ? 0u : (uint.MaxValue << (32 - mask));
-
-    return (ipInt & maskInt) == (netInt & maskInt);
+static uint ToUint(IPAddress address)
+{
+    var b = address.GetAddressBytes();
+    // explicit pořadí bajtů -> nezávislé na endianness systému
+    return ((uint)b[0] << 24) | ((uint)b[1] << 16) | ((uint)b[2] << 8) | b[3];
 }
