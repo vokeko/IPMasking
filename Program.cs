@@ -1,5 +1,4 @@
-﻿using System;
-using IPMasking.Core;
+﻿using IPMasking.Utilities;
 
 string? network;
 uint networkAddress;
